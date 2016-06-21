@@ -82,6 +82,7 @@ public class AWSCodeDeployPublisher extends Publisher {
     private final String  s3bucket;
     private final String  s3prefix;
     private final String  applicationName;
+    private final String  deploymentDescription;
     private final String  deploymentGroupName; // TODO allow for deployment to multiple groups
     private final String  deploymentConfig;
     private final Long    pollingTimeoutSec;
@@ -109,6 +110,7 @@ public class AWSCodeDeployPublisher extends Publisher {
             String s3bucket,
             String s3prefix,
             String applicationName,
+            String deploymentDescription,
             String deploymentGroupName,
             String deploymentConfig,
             String region,
@@ -130,6 +132,7 @@ public class AWSCodeDeployPublisher extends Publisher {
         this.externalId = externalId;
         this.applicationName = applicationName;
         this.deploymentGroupName = deploymentGroupName;
+        this.deploymentDescription = deploymentDescription;
         if (deploymentConfig != null && deploymentConfig.length() == 0) {
             this.deploymentConfig = null;
         } else {
@@ -356,7 +359,7 @@ public class AWSCodeDeployPublisher extends Publisher {
     }
 
     private String createDeployment(AWSClients aws, RevisionLocation revisionLocation) throws Exception {
-
+        String deploymentDescription = getDeploymentDescriptionFromEnv();
         this.logger.println("Creating deployment with revision at " + revisionLocation);
 
         CreateDeploymentResult createDeploymentResult = aws.codedeploy.createDeployment(
@@ -365,7 +368,7 @@ public class AWSCodeDeployPublisher extends Publisher {
                         .withDeploymentGroupName(getDeploymentGroupNameFromEnv())
                         .withApplicationName(getApplicationNameFromEnv())
                         .withRevision(revisionLocation)
-                        .withDescription("Deployment created by Jenkins")
+                        .withDescription(deploymentDescription)
         );
 
         return createDeploymentResult.getDeploymentId();
@@ -590,6 +593,10 @@ public class AWSCodeDeployPublisher extends Publisher {
         return applicationName;
     }
 
+    public String getDeploymentDescription(){
+        return deploymentDescription;
+    }
+
     public String getDeploymentGroupName() {
         return deploymentGroupName;
     }
@@ -669,7 +676,9 @@ public class AWSCodeDeployPublisher extends Publisher {
     public String getApplicationNameFromEnv() {
         return Util.replaceMacro(this.applicationName, envVars);
     }
-
+    public String getDeploymentDescriptionFromEnv(){
+        return Util.replaceMacro(this.deploymentDescription, envVars);
+    }
     public String getDeploymentGroupNameFromEnv() {
         return Util.replaceMacro(this.deploymentGroupName, envVars);
     }

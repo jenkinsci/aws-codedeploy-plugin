@@ -32,6 +32,9 @@
     <f:entry title="Proxy Port" field="proxyPort">
     <f:textbox default="" />
   </f:entry>
+      <f:entry title="Deployment Description " field="deploymentDescription">
+    <f:textbox default="Deployment created by Jenkins" />
+  </f:entry>
 
     <f:entry title="Appspec.yml per Deployment Group"  field="deploymentGroupAppspec">
       <f:checkbox field="deploymentGroupAppspec" checked="${instance.getDeploymentGroupAppspec}"/>
