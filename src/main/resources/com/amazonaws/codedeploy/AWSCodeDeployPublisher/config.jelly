@@ -32,6 +32,14 @@
     <f:entry title="Proxy Port" field="proxyPort">
     <f:textbox default="" />
   </f:entry>
+  <f:entry name="fileType" title="File type" field="fileType">
+    <select name="fileType">
+        <option value="Zip">zip</option>
+        <option value="Tar">tar</option>
+        <option value="Tgz">tar.gz</option>
+    </select>
+  </f:entry>
+  
 
     <f:entry title="Appspec.yml per Deployment Group"  field="deploymentGroupAppspec">
       <f:checkbox field="deploymentGroupAppspec" checked="${instance.getDeploymentGroupAppspec}"/>
