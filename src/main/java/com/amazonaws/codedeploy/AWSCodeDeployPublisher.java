@@ -35,10 +35,12 @@ import hudson.FilePath;
 import hudson.Launcher;
 import hudson.Extension;
 import hudson.Util;
+import hudson.EnvVars;
 import hudson.model.AbstractBuild;
 import hudson.model.BuildListener;
 import hudson.model.AbstractProject;
 import hudson.model.Result;
+import hudson.model.Environment;
 import hudson.tasks.BuildStepMonitor;
 import hudson.tasks.BuildStepDescriptor;
 import hudson.tasks.Publisher;
@@ -78,6 +80,7 @@ public class AWSCodeDeployPublisher extends Publisher {
     public static final long      DEFAULT_TIMEOUT_SECONDS           = 900;
     public static final long      DEFAULT_POLLING_FREQUENCY_SECONDS = 15;
     public static final String    ROLE_SESSION_NAME                 = "jenkins-codedeploy-plugin";
+    public static final String    AWS_CODEDEPLOY_S3_KEY             = "AWS_CODEDEPLOY_S3_KEY";
     public static final Regions[] AVAILABLE_REGIONS                 = {Regions.AP_NORTHEAST_1, Regions.AP_SOUTHEAST_1, Regions.AP_SOUTHEAST_2, Regions.EU_WEST_1, Regions.US_EAST_1, Regions.US_WEST_2, Regions.EU_CENTRAL_1, Regions.US_WEST_1, Regions.SA_EAST_1, Regions.AP_NORTHEAST_2};
 
     private final String  s3bucket;
@@ -220,8 +223,7 @@ public class AWSCodeDeployPublisher extends Publisher {
 
             verifyCodeDeployApplication(aws);
 
-            String projectName = build.getProject().getName();
-            RevisionLocation revisionLocation = zipAndUpload(aws, projectName, getSourceDirectory(build.getWorkspace()));
+            RevisionLocation revisionLocation = zipAndUpload(aws, build);
 
             registerRevision(aws, revisionLocation);
             if ("onlyRevision".equals(deploymentMethod)){
@@ -290,7 +292,9 @@ public class AWSCodeDeployPublisher extends Publisher {
         }
     }
 
-    private RevisionLocation zipAndUpload(AWSClients aws, String projectName, FilePath sourceDirectory) throws IOException, InterruptedException, IllegalArgumentException {
+    private RevisionLocation zipAndUpload(AWSClients aws, AbstractBuild build) throws IOException, InterruptedException, IllegalArgumentException {
+        String projectName = build.getProject().getName();
+        FilePath sourceDirectory = getSourceDirectory(build.getWorkspace());
 
         File zipFile = null;
         File versionFile;
@@ -373,6 +377,10 @@ public class AWSCodeDeployPublisher extends Publisher {
             RevisionLocation revisionLocation = new RevisionLocation();
             revisionLocation.setRevisionType(RevisionLocationType.S3);
             revisionLocation.setS3Location(s3Location);
+
+            envVars.put(AWS_CODEDEPLOY_S3_KEY, key);
+            EnvVars envVarsObject = new EnvVars(envVars);
+            build.getEnvironments().set(0, Environment.create(envVarsObject));
 
             return revisionLocation;
         } finally {
