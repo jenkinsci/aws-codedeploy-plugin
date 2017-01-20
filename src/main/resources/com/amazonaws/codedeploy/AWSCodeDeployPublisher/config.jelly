@@ -27,6 +27,11 @@
   <f:entry title="Exclude Files" field="excludes">
     <f:textbox default="" />
   </f:entry>
+  
+  <f:entry title="Use Default (Ant) Excludes List"  field="useDefaultExcludes">
+    <f:checkbox default="true" field="useDefaultExcludes" checked="${instance.getUseDefaultExcludes}" />
+  </f:entry>
+
   <f:entry title="Proxy Host" field="proxyHost">
     <f:textbox default="" />
   </f:entry>

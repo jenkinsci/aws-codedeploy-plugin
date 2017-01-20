@@ -70,7 +70,7 @@ import javax.servlet.ServletException;
 /**
  * The AWS CodeDeploy Publisher is a post-build plugin that adds the ability to start a new CodeDeploy deployment
  * with the project's workspace as the application revision.
- * <p/>
+ * 
  * To configure, users must create an IAM role that allows "S3" and "CodeDeploy" actions and must be assumable by
  * the globally configured keys. This allows the plugin to get temporary credentials instead of requiring permanent
  * credentials to be configured for each project.
@@ -95,6 +95,7 @@ public class AWSCodeDeployPublisher extends Publisher {
     private final String region;
     private final String includes;
     private final String excludes;
+	private final boolean useDefaultExcludes;
     private final String subdirectory;
     private final String proxyHost;
     private final int proxyPort;
@@ -131,7 +132,8 @@ public class AWSCodeDeployPublisher extends Publisher {
             String proxyHost,
             int proxyPort,
             String excludes,
-            String subdirectory) {
+            String subdirectory,
+			Boolean useDefaultExcludes) {
 
         this.externalId = externalId;
         this.applicationName = applicationName;
@@ -144,6 +146,13 @@ public class AWSCodeDeployPublisher extends Publisher {
         this.region = region;
         this.includes = includes;
         this.excludes = excludes;
+		if (useDefaultExcludes == null) {
+			// if not defined, default to true to retain backward compatibilty for versions <= 1.15
+			this.useDefaultExcludes = true;
+		}
+		else {
+			this.useDefaultExcludes = useDefaultExcludes;
+		}
         this.subdirectory = subdirectory;
         this.proxyHost = proxyHost;
         this.proxyPort = proxyPort;
@@ -179,6 +188,7 @@ public class AWSCodeDeployPublisher extends Publisher {
         } else {
             this.s3prefix = s3prefix;
         }
+		
     }
 
     @Override
@@ -357,7 +367,7 @@ public class AWSCodeDeployPublisher extends Publisher {
             try {
                 sourceDirectory.zip(
                         outputStream,
-                        new DirScanner.Glob(this.includes, this.excludes)
+                        new DirScanner.Glob(this.includes, this.excludes, this.useDefaultExcludes)
                 );
             } finally {
                 outputStream.close();
@@ -495,8 +505,7 @@ public class AWSCodeDeployPublisher extends Publisher {
     /**
      * Descriptor for {@link AWSCodeDeployPublisher}. Used as a singleton.
      * The class is marked as public so that it can be accessed from views.
-     * <p/>
-     * <p/>
+     * 
      * See <tt>src/main/resources/com/amazonaws/codedeploy/AWSCodeDeployPublisher/*.jelly</tt>
      * for the actual HTML fragment for the configuration screen.
      */
@@ -709,6 +718,10 @@ public class AWSCodeDeployPublisher extends Publisher {
 
     public String getExcludes() {
         return excludes;
+    }
+
+	public boolean getUseDefaultExcludes() {
+        return useDefaultExcludes;
     }
 
     public String getSubdirectory() {
