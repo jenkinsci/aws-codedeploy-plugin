@@ -35,10 +35,12 @@ import hudson.FilePath;
 import hudson.Launcher;
 import hudson.Extension;
 import hudson.Util;
+import hudson.EnvVars;
 import hudson.model.AbstractBuild;
 import hudson.model.BuildListener;
 import hudson.model.AbstractProject;
 import hudson.model.Result;
+import hudson.model.Environment;
 import hudson.tasks.BuildStepMonitor;
 import hudson.tasks.BuildStepDescriptor;
 import hudson.tasks.Publisher;
@@ -70,7 +72,7 @@ import javax.servlet.ServletException;
 /**
  * The AWS CodeDeploy Publisher is a post-build plugin that adds the ability to start a new CodeDeploy deployment
  * with the project's workspace as the application revision.
- * <p/>
+ *
  * To configure, users must create an IAM role that allows "S3" and "CodeDeploy" actions and must be assumable by
  * the globally configured keys. This allows the plugin to get temporary credentials instead of requiring permanent
  * credentials to be configured for each project.
@@ -79,6 +81,7 @@ public class AWSCodeDeployPublisher extends Publisher {
     public static final long      DEFAULT_TIMEOUT_SECONDS           = 900;
     public static final long      DEFAULT_POLLING_FREQUENCY_SECONDS = 15;
     public static final String    ROLE_SESSION_NAME                 = "jenkins-codedeploy-plugin";
+    public static final String    AWS_CODEDEPLOY_DEPLOYMENT_ID      = "AWS_CODEDEPLOY_DEPLOYMENT_ID";
     private static final Regions[] AVAILABLE_REGIONS                 = {Regions.AP_NORTHEAST_1, Regions.AP_SOUTHEAST_1, Regions.AP_SOUTHEAST_2, Regions.EU_WEST_1, Regions.US_EAST_1, Regions.US_WEST_2, Regions.EU_CENTRAL_1, Regions.US_WEST_1, Regions.SA_EAST_1, Regions.AP_NORTHEAST_2, Regions.AP_SOUTH_1};
 
     private final String  s3bucket;
@@ -235,7 +238,9 @@ public class AWSCodeDeployPublisher extends Publisher {
             } else {
 
               String deploymentId = createDeployment(aws, revisionLocation);
-
+              envVars.put(AWS_CODEDEPLOY_DEPLOYMENT_ID, deploymentId);
+              EnvVars envVarsObject = new EnvVars(envVars);
+              build.getEnvironments().set(0, Environment.create(envVarsObject));
               success = waitForDeployment(aws, deploymentId);
             }
 
@@ -495,8 +500,8 @@ public class AWSCodeDeployPublisher extends Publisher {
     /**
      * Descriptor for {@link AWSCodeDeployPublisher}. Used as a singleton.
      * The class is marked as public so that it can be accessed from views.
-     * <p/>
-     * <p/>
+     *
+     *
      * See <tt>src/main/resources/com/amazonaws/codedeploy/AWSCodeDeployPublisher/*.jelly</tt>
      * for the actual HTML fragment for the configuration screen.
      */
