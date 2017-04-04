@@ -200,12 +200,21 @@ public class AWSCodeDeployPublisher extends Publisher implements SimpleBuildStep
                         this.proxyHost,
                         this.proxyPort);
             } else {
-                aws = AWSClients.fromBasicCredentials(
+                if (StringUtils.isEmpty(envVars.get(this.awsAccessKey)) && StringUtils.isEmpty(envVars.get(this.awsSecretKey))) {
+                    aws = AWSClients.fromBasicCredentials(
                         this.region,
                         this.awsAccessKey,
                         this.awsSecretKey,
                         this.proxyHost,
                         this.proxyPort);
+                } else {
+                    aws = AWSClients.fromBasicCredentials(
+                        this.region,
+                        envVars.get(this.awsAccessKey),
+                        envVars.get(this.awsSecretKey),
+                        this.proxyHost,
+                        this.proxyPort);
+                }
             }
         } else {
             aws = AWSClients.fromIAMRole(
