@@ -90,6 +90,8 @@ public class AWSClients {
     /**
      * Via the default provider chain (i.e., global keys for this Jenkins instance),  return the account ID for the
      * currently authenticated user.
+	 * @param proxyHost Proxy host DNS
+	 * @param proxyPort Proxy host port number
      * @return 12-digit account id
      */
     public static String getAccountId(String proxyHost, int proxyPort) {
