@@ -31,22 +31,22 @@ import com.amazonaws.services.codedeploy.model.GetDeploymentRequest;
 import com.amazonaws.services.codedeploy.model.RegisterApplicationRevisionRequest;
 import com.amazonaws.services.codedeploy.model.S3Location;
 
+import hudson.AbortException;
 import hudson.FilePath;
 import hudson.Launcher;
-import hudson.Extension;
 import hudson.Util;
-import hudson.model.AbstractBuild;
-import hudson.model.BuildListener;
+import hudson.Extension;
 import hudson.model.AbstractProject;
 import hudson.model.Result;
+import hudson.model.Run;
+import hudson.model.TaskListener;
 import hudson.tasks.BuildStepMonitor;
 import hudson.tasks.BuildStepDescriptor;
 import hudson.tasks.Publisher;
 import hudson.util.DirScanner;
-import hudson.util.FileVisitor;
 import hudson.util.FormValidation;
 import hudson.util.ListBoxModel;
-import net.sf.json.JSONException;
+import jenkins.tasks.SimpleBuildStep;
 import net.sf.json.JSONObject;
 
 import org.apache.commons.lang.StringUtils;
@@ -65,21 +65,22 @@ import java.util.Date;
 import java.util.Map;
 import java.util.UUID;
 
+import javax.annotation.Nonnull;
 import javax.servlet.ServletException;
 
 /**
  * The AWS CodeDeploy Publisher is a post-build plugin that adds the ability to start a new CodeDeploy deployment
  * with the project's workspace as the application revision.
- * <p/>
+ *
  * To configure, users must create an IAM role that allows "S3" and "CodeDeploy" actions and must be assumable by
  * the globally configured keys. This allows the plugin to get temporary credentials instead of requiring permanent
  * credentials to be configured for each project.
  */
-public class AWSCodeDeployPublisher extends Publisher {
+public class AWSCodeDeployPublisher extends Publisher implements SimpleBuildStep {
     public static final long      DEFAULT_TIMEOUT_SECONDS           = 900;
     public static final long      DEFAULT_POLLING_FREQUENCY_SECONDS = 15;
     public static final String    ROLE_SESSION_NAME                 = "jenkins-codedeploy-plugin";
-    private static final Regions[] AVAILABLE_REGIONS                 = {Regions.AP_NORTHEAST_1, Regions.AP_SOUTHEAST_1, Regions.AP_SOUTHEAST_2, Regions.EU_WEST_1, Regions.US_EAST_1, Regions.US_WEST_2, Regions.EU_CENTRAL_1, Regions.US_WEST_1, Regions.SA_EAST_1, Regions.AP_NORTHEAST_2, Regions.AP_SOUTH_1};
+    private static final Regions[] AVAILABLE_REGIONS                 = {Regions.AP_NORTHEAST_1, Regions.AP_SOUTHEAST_1, Regions.AP_SOUTHEAST_2, Regions.EU_WEST_1, Regions.US_EAST_1, Regions.US_WEST_2, Regions.EU_CENTRAL_1, Regions.US_WEST_1, Regions.SA_EAST_1, Regions.AP_NORTHEAST_2, Regions.AP_SOUTH_1, Regions.US_EAST_2, Regions.CA_CENTRAL_1, Regions.EU_WEST_2, Regions.CN_NORTH_1};
 
     private final String  s3bucket;
     private final String  s3prefix;
@@ -182,13 +183,13 @@ public class AWSCodeDeployPublisher extends Publisher {
     }
 
     @Override
-    public boolean perform(AbstractBuild build, Launcher launcher, BuildListener listener) throws IOException, InterruptedException {
+    public void perform(@Nonnull Run<?,?> build, @Nonnull FilePath workspace, @Nonnull Launcher launcher, @Nonnull TaskListener listener) throws IOException, InterruptedException {
         this.logger = listener.getLogger();
         envVars = build.getEnvironment(listener);
         final boolean buildFailed = build.getResult() == Result.FAILURE;
         if (buildFailed) {
             logger.println("Skipping CodeDeploy publisher as build failed");
-            return true;
+            return;
         }
 
         final AWSClients aws;
@@ -199,12 +200,21 @@ public class AWSCodeDeployPublisher extends Publisher {
                         this.proxyHost,
                         this.proxyPort);
             } else {
-                aws = AWSClients.fromBasicCredentials(
+                if (StringUtils.isEmpty(envVars.get(this.awsAccessKey)) && StringUtils.isEmpty(envVars.get(this.awsSecretKey))) {
+                    aws = AWSClients.fromBasicCredentials(
                         this.region,
                         this.awsAccessKey,
                         this.awsSecretKey,
                         this.proxyHost,
                         this.proxyPort);
+                } else {
+                    aws = AWSClients.fromBasicCredentials(
+                        this.region,
+                        envVars.get(this.awsAccessKey),
+                        envVars.get(this.awsSecretKey),
+                        this.proxyHost,
+                        this.proxyPort);
+                }
             }
         } else {
             aws = AWSClients.fromIAMRole(
@@ -215,14 +225,13 @@ public class AWSCodeDeployPublisher extends Publisher {
                 this.proxyPort);
         }
 
-        boolean success;
+        boolean success = false;
 
         try {
 
             verifyCodeDeployApplication(aws);
 
-            final String projectName = build.getProject().getName();
-            final FilePath workspace = build.getWorkspace();
+            final String projectName = build.getDisplayName();
             if (workspace == null) {
                 throw new IllegalArgumentException("No workspace present for the build.");
             }
@@ -244,11 +253,11 @@ public class AWSCodeDeployPublisher extends Publisher {
             this.logger.println("Failed CodeDeploy post-build step; exception follows.");
             this.logger.println(e.getMessage());
             e.printStackTrace(this.logger);
-            success = false;
-
         }
 
-        return success;
+        if (!success) {
+            throw new AbortException();
+        }
     }
 
     private FilePath getSourceDirectory(FilePath basePath) throws IOException, InterruptedException {
@@ -488,15 +497,14 @@ public class AWSCodeDeployPublisher extends Publisher {
     }
 
     public BuildStepMonitor getRequiredMonitorService() {
-
-        return BuildStepMonitor.STEP;
+        return BuildStepMonitor.NONE;
     }
 
     /**
+     *
      * Descriptor for {@link AWSCodeDeployPublisher}. Used as a singleton.
      * The class is marked as public so that it can be accessed from views.
-     * <p/>
-     * <p/>
+     *
      * See <tt>src/main/resources/com/amazonaws/codedeploy/AWSCodeDeployPublisher/*.jelly</tt>
      * for the actual HTML fragment for the configuration screen.
      */
