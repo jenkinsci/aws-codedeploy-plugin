@@ -1,0 +1,62 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<project>
+    <actions/>
+    <description></description>
+    <keepDependencies>false</keepDependencies>
+    <properties/>
+    <scm class="hudson.plugins.git.GitSCM" plugin="git@3.8.0">
+        <configVersion>2</configVersion>
+        <userRemoteConfigs>
+            <hudson.plugins.git.UserRemoteConfig>
+                <url>https://github.com/awslabs/aws-codedeploy-plugin.git</url>
+            </hudson.plugins.git.UserRemoteConfig>
+        </userRemoteConfigs>
+        <branches>
+            <hudson.plugins.git.BranchSpec>
+                <name>*/master</name>
+            </hudson.plugins.git.BranchSpec>
+        </branches>
+        <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
+        <submoduleCfg class="list"/>
+        <extensions/>
+    </scm>
+    <canRoam>true</canRoam>
+    <disabled>false</disabled>
+    <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
+    <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+    <triggers/>
+    <concurrentBuild>false</concurrentBuild>
+    <builders>
+        <hudson.tasks.Maven>
+            <targets>package</targets>
+            <mavenName>(Default)</mavenName>
+            <usePrivateRepository>false</usePrivateRepository>
+            <settings class="jenkins.mvn.DefaultSettingsProvider"/>
+            <globalSettings class="jenkins.mvn.DefaultGlobalSettingsProvider"/>
+            <injectBuildVariables>false</injectBuildVariables>
+        </hudson.tasks.Maven>
+    </builders>
+    <publishers>
+        <com.amazonaws.codedeploy.AWSCodeDeployPublisher plugin="codedeploy@1.20-SNAPSHOT">
+            <s3bucket>test_bucket</s3bucket>
+            <s3prefix></s3prefix>
+            <applicationName>TestApplication</applicationName>
+            <deploymentGroupName>TestDeploymentGorup</deploymentGroupName>
+            <deploymentGroupAppspec>false</deploymentGroupAppspec>
+            <waitForCompletion>false</waitForCompletion>
+            <iamRoleArn></iamRoleArn>
+            <region>us-west-2</region>
+            <includes>**</includes>
+            <excludes></excludes>
+            <subdirectory></subdirectory>
+            <proxyHost></proxyHost>
+            <proxyPort>0</proxyPort>
+            <awsAccessKey>TEST_ACCESS</awsAccessKey>
+            <awsSecretKey>TEST_SECRET</awsSecretKey>
+            <credentials>awsAccessKey</credentials>
+            <deploymentMethod>deploy</deploymentMethod>
+            <versionFileName></versionFileName>
+        </com.amazonaws.codedeploy.AWSCodeDeployPublisher>
+    </publishers>
+    <buildWrappers/>
+</project>

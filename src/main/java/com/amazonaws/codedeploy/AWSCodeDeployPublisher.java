@@ -46,6 +46,7 @@ import hudson.tasks.Publisher;
 import hudson.util.DirScanner;
 import hudson.util.FormValidation;
 import hudson.util.ListBoxModel;
+import hudson.util.Secret;
 import jenkins.tasks.SimpleBuildStep;
 import net.sf.json.JSONObject;
 
@@ -101,13 +102,16 @@ public class AWSCodeDeployPublisher extends Publisher implements SimpleBuildStep
     private final int proxyPort;
 
     private final String awsAccessKey;
-    private final String awsSecretKey;
+    private final Secret awsSecretKey;
     private final String credentials;
     private final String deploymentMethod;
     private final String versionFileName;
 
-    private PrintStream logger;
-    private Map <String, String> envVars;
+    @Deprecated
+    private transient PrintStream logger;
+    @Deprecated
+    private transient Map<String, String> envVars;
+
     // Fields in config.jelly must match the parameter names in the "DataBoundConstructor"
     @DataBoundConstructor
     public AWSCodeDeployPublisher(
@@ -133,7 +137,6 @@ public class AWSCodeDeployPublisher extends Publisher implements SimpleBuildStep
             int proxyPort,
             String excludes,
             String subdirectory) {
-
         this.externalId = externalId;
         this.applicationName = applicationName;
         this.deploymentGroupName = deploymentGroupName;
@@ -152,7 +155,7 @@ public class AWSCodeDeployPublisher extends Publisher implements SimpleBuildStep
         this.deploymentMethod = deploymentMethod;
         this.versionFileName = versionFileName;
         this.awsAccessKey = awsAccessKey;
-        this.awsSecretKey = awsSecretKey;
+        this.awsSecretKey = Secret.fromString(awsSecretKey);
         this.iamRoleArn = iamRoleArn;
         this.deploymentGroupAppspec = deploymentGroupAppspec;
 
@@ -184,8 +187,8 @@ public class AWSCodeDeployPublisher extends Publisher implements SimpleBuildStep
 
     @Override
     public void perform(@Nonnull Run<?,?> build, @Nonnull FilePath workspace, @Nonnull Launcher launcher, @Nonnull TaskListener listener) throws IOException, InterruptedException {
-        this.logger = listener.getLogger();
-        envVars = build.getEnvironment(listener);
+        final PrintStream logger = listener.getLogger();
+        final Map<String, String> envVars = build.getEnvironment(listener);
         final boolean buildFailed = build.getResult() == Result.FAILURE;
         if (buildFailed) {
             logger.println("Skipping CodeDeploy publisher as build failed");
@@ -194,7 +197,7 @@ public class AWSCodeDeployPublisher extends Publisher implements SimpleBuildStep
 
         final AWSClients aws;
         if ("awsAccessKey".equals(credentials)) {
-            if (StringUtils.isEmpty(this.awsAccessKey) && StringUtils.isEmpty(this.awsSecretKey)) {
+            if (StringUtils.isEmpty(this.awsAccessKey) && StringUtils.isEmpty(Secret.toString(this.awsSecretKey))) {
                 aws = AWSClients.fromDefaultCredentialChain(
                         this.region,
                         this.proxyHost,
@@ -204,7 +207,7 @@ public class AWSCodeDeployPublisher extends Publisher implements SimpleBuildStep
                     aws = AWSClients.fromBasicCredentials(
                         this.region,
                         this.awsAccessKey,
-                        this.awsSecretKey,
+                        Secret.toString(this.awsSecretKey),
                         this.proxyHost,
                         this.proxyPort);
                 } else {
@@ -229,30 +232,30 @@ public class AWSCodeDeployPublisher extends Publisher implements SimpleBuildStep
 
         try {
 
-            verifyCodeDeployApplication(aws);
+            verifyCodeDeployApplication(aws, envVars);
 
             final String projectName = build.getDisplayName();
             if (workspace == null) {
                 throw new IllegalArgumentException("No workspace present for the build.");
             }
-            final FilePath sourceDirectory = getSourceDirectory(workspace);
-            final RevisionLocation revisionLocation = zipAndUpload(aws, projectName, sourceDirectory);
+            final FilePath sourceDirectory = getSourceDirectory(workspace, envVars);
+            final RevisionLocation revisionLocation = zipAndUpload(aws, projectName, sourceDirectory, logger, envVars);
 
-            registerRevision(aws, revisionLocation);
+            registerRevision(aws, revisionLocation, logger, envVars);
             if ("onlyRevision".equals(deploymentMethod)){
               success = true;
             } else {
 
-              String deploymentId = createDeployment(aws, revisionLocation);
+              String deploymentId = createDeployment(aws, revisionLocation, logger, envVars);
 
-              success = waitForDeployment(aws, deploymentId);
+              success = waitForDeployment(aws, deploymentId, logger);
             }
 
         } catch (Exception e) {
 
-            this.logger.println("Failed CodeDeploy post-build step; exception follows.");
-            this.logger.println(e.getMessage());
-            e.printStackTrace(this.logger);
+            logger.println("Failed CodeDeploy post-build step; exception follows.");
+            logger.println(e.getMessage());
+            e.printStackTrace(logger);
         }
 
         if (!success) {
@@ -260,8 +263,8 @@ public class AWSCodeDeployPublisher extends Publisher implements SimpleBuildStep
         }
     }
 
-    private FilePath getSourceDirectory(FilePath basePath) throws IOException, InterruptedException {
-        String subdirectory = StringUtils.trimToEmpty(getSubdirectoryFromEnv());
+    private FilePath getSourceDirectory(FilePath basePath, Map<String, String> envVars) throws IOException, InterruptedException {
+        String subdirectory = StringUtils.trimToEmpty(getSubdirectoryFromEnv(envVars));
         if (!subdirectory.isEmpty() && !subdirectory.startsWith("/")) {
             subdirectory = "/" + subdirectory;
         }
@@ -284,11 +287,11 @@ public class AWSCodeDeployPublisher extends Publisher implements SimpleBuildStep
         return false;
     }
 
-    private void verifyCodeDeployApplication(AWSClients aws) throws IllegalArgumentException {
+    private void verifyCodeDeployApplication(AWSClients aws, Map<String, String> envVars) throws IllegalArgumentException {
         // Check that the application exists
         ListApplicationsResult applications = aws.codedeploy.listApplications();
-        String applicationName = getApplicationNameFromEnv();
-        String deploymentGroupName = getDeploymentGroupNameFromEnv();
+        String applicationName = getApplicationNameFromEnv(envVars);
+        String deploymentGroupName = getDeploymentGroupNameFromEnv(envVars);
 
         if (!applications.getApplications().contains(applicationName)) {
             throw new IllegalArgumentException("Cannot find application named '" + applicationName + "'");
@@ -305,7 +308,7 @@ public class AWSCodeDeployPublisher extends Publisher implements SimpleBuildStep
         }
     }
 
-    private RevisionLocation zipAndUpload(AWSClients aws, String projectName, FilePath sourceDirectory) throws IOException, InterruptedException, IllegalArgumentException {
+    private RevisionLocation zipAndUpload(AWSClients aws, String projectName, FilePath sourceDirectory, PrintStream logger, Map<String, String> envVars) throws IOException, InterruptedException, IllegalArgumentException {
 
         File zipFile = null;
         File versionFile;
@@ -338,9 +341,9 @@ public class AWSCodeDeployPublisher extends Publisher implements SimpleBuildStep
         String key;
         File appspec;
         File dest;
-        String deploymentGroupName = getDeploymentGroupNameFromEnv();
-        String prefix = getS3PrefixFromEnv();
-        String bucket = getS3BucketFromEnv();
+        String deploymentGroupName = getDeploymentGroupNameFromEnv(envVars);
+        String prefix = getS3PrefixFromEnv(envVars);
+        String bucket = getS3BucketFromEnv(envVars);
 
         if(bucket.indexOf("/") > 0){
             throw new IllegalArgumentException("S3 Bucket field cannot contain any subdirectories.  Bucket name only!");
@@ -404,10 +407,10 @@ public class AWSCodeDeployPublisher extends Publisher implements SimpleBuildStep
         }
     }
 
-    private void registerRevision(AWSClients aws, RevisionLocation revisionLocation) {
+    private void registerRevision(AWSClients aws, RevisionLocation revisionLocation, PrintStream logger, Map<String, String> envVars) {
 
-        String applicationName = getApplicationNameFromEnv();
-        this.logger.println("Registering revision for application '" + applicationName + "'");
+        String applicationName = getApplicationNameFromEnv(envVars);
+        logger.println("Registering revision for application '" + applicationName + "'");
 
         aws.codedeploy.registerApplicationRevision(
                 new RegisterApplicationRevisionRequest()
@@ -417,15 +420,15 @@ public class AWSCodeDeployPublisher extends Publisher implements SimpleBuildStep
         );
     }
 
-    private String createDeployment(AWSClients aws, RevisionLocation revisionLocation) throws Exception {
+    private String createDeployment(AWSClients aws, RevisionLocation revisionLocation, PrintStream logger, Map<String, String> envVars) throws Exception {
 
-        this.logger.println("Creating deployment with revision at " + revisionLocation);
+        logger.println("Creating deployment with revision at " + revisionLocation);
 
         CreateDeploymentResult createDeploymentResult = aws.codedeploy.createDeployment(
                 new CreateDeploymentRequest()
-                        .withDeploymentConfigName(getDeploymentConfigFromEnv())
-                        .withDeploymentGroupName(getDeploymentGroupNameFromEnv())
-                        .withApplicationName(getApplicationNameFromEnv())
+                        .withDeploymentConfigName(getDeploymentConfigFromEnv(envVars))
+                        .withDeploymentGroupName(getDeploymentGroupNameFromEnv(envVars))
+                        .withApplicationName(getApplicationNameFromEnv(envVars))
                         .withRevision(revisionLocation)
                         .withDescription("Deployment created by Jenkins")
         );
@@ -433,7 +436,7 @@ public class AWSCodeDeployPublisher extends Publisher implements SimpleBuildStep
         return createDeploymentResult.getDeploymentId();
     }
 
-    private boolean waitForDeployment(AWSClients aws, String deploymentId) throws InterruptedException {
+    private boolean waitForDeployment(AWSClients aws, String deploymentId, PrintStream logger) throws InterruptedException {
 
         if (!this.waitForCompletion) {
             return true;
@@ -469,7 +472,7 @@ public class AWSCodeDeployPublisher extends Publisher implements SimpleBuildStep
             Date now = new Date();
 
             if (now.getTime() - startTimeMillis >= pollingTimeoutMillis) {
-                this.logger.println("Exceeded maximum polling time of " + pollingTimeoutMillis + " milliseconds.");
+                logger.println("Exceeded maximum polling time of " + pollingTimeoutMillis + " milliseconds.");
                 success = false;
                 break;
             }
@@ -480,7 +483,7 @@ public class AWSCodeDeployPublisher extends Publisher implements SimpleBuildStep
         logger.println("Deployment status: " + deployStatus.getStatus() + "; instances: " + deployStatus.getDeploymentOverview());
 
         if (!deployStatus.getStatus().equals(DeploymentStatus.Succeeded.toString())) {
-            this.logger.println("Deployment did not succeed. Final status: " + deployStatus.getStatus());
+            logger.println("Deployment did not succeed. Final status: " + deployStatus.getStatus());
             success = false;
         }
 
@@ -513,7 +516,7 @@ public class AWSCodeDeployPublisher extends Publisher implements SimpleBuildStep
 
         private String externalId;
         private String awsAccessKey;
-        private String awsSecretKey;
+        private Secret awsSecretKey;
         private String proxyHost;
         private int proxyPort;
 
@@ -552,7 +555,7 @@ public class AWSCodeDeployPublisher extends Publisher implements SimpleBuildStep
         public boolean configure(StaplerRequest req, JSONObject formData) throws FormException {
 
             awsAccessKey = formData.getString("awsAccessKey");
-            awsSecretKey = formData.getString("awsSecretKey");
+            awsSecretKey = Secret.fromString(formData.getString("awsSecretKey"));
             proxyHost = formData.getString("proxyHost");
             proxyPort = Integer.parseInt(formData.getString("proxyPort"));
 
@@ -627,12 +630,12 @@ public class AWSCodeDeployPublisher extends Publisher implements SimpleBuildStep
 
         public String getAwsSecretKey()
         {
-            return awsSecretKey;
+            return Secret.toString(awsSecretKey);
         }
 
         public void setAwsSecretKey(String awsSecretKey)
         {
-            this.awsSecretKey = awsSecretKey;
+            this.awsSecretKey = Secret.fromString(awsSecretKey);
         }
 
         public String getAwsAccessKey()
@@ -679,7 +682,7 @@ public class AWSCodeDeployPublisher extends Publisher implements SimpleBuildStep
         return awsAccessKey;
     }
 
-    public String getAwsSecretKey() {
+    public Secret getAwsSecretKey() {
         return awsSecretKey;
     }
 
@@ -735,27 +738,27 @@ public class AWSCodeDeployPublisher extends Publisher implements SimpleBuildStep
         return proxyPort;
     }
 
-    public String getApplicationNameFromEnv() {
+    public String getApplicationNameFromEnv(final Map<String, String> envVars) {
         return Util.replaceMacro(this.applicationName, envVars);
     }
 
-    public String getDeploymentGroupNameFromEnv() {
+    public String getDeploymentGroupNameFromEnv(final Map<String, String> envVars) {
         return Util.replaceMacro(this.deploymentGroupName, envVars);
     }
 
-    public String getDeploymentConfigFromEnv() {
+    public String getDeploymentConfigFromEnv(final Map<String, String> envVars) {
         return Util.replaceMacro(this.deploymentConfig, envVars);
     }
 
-    public String getS3BucketFromEnv() {
+    public String getS3BucketFromEnv(final Map<String, String> envVars) {
         return Util.replaceMacro(this.s3bucket, envVars);
     }
 
-    public String getS3PrefixFromEnv() {
+    public String getS3PrefixFromEnv(Map<String, String> envVars) {
         return Util.replaceMacro(this.s3prefix, envVars);
     }
 
-    public String getSubdirectoryFromEnv() {
+    public String getSubdirectoryFromEnv(Map<String, String> envVars) {
         return Util.replaceMacro(this.subdirectory, envVars);
     }
 }

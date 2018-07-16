@@ -49,9 +49,15 @@ public class AWSClients {
      * Sample ARN: arn:aws:iam::123456789012:user/David
      **/
     private static final int ARN_ACCOUNT_ID_INDEX = 4;
+    
+    /**
+     * AWS-CodeDeploy-Jenkins-Plugin/<Version>
+     * This will be used as the SDK user agent suffix
+     **/
+    private static final String USER_AGENT_SUFFIX = "AWS-CodeDeploy-Jenkins-Plugin/1.20";
 
     public final AmazonCodeDeployClient codedeploy;
-    public final AmazonS3Client         s3;
+    public final AmazonS3Client s3;
 
     private final String region;
     private final String proxyHost;
@@ -68,6 +74,8 @@ public class AWSClients {
             clientCfg.setProxyHost(proxyHost);
             clientCfg.setProxyPort(proxyPort);
         }
+        
+        clientCfg.setUserAgentSuffix(USER_AGENT_SUFFIX);
 
         this.s3 = credentials != null ? new AmazonS3Client(credentials, clientCfg) : new AmazonS3Client(clientCfg);
         this.codedeploy = credentials != null ? new AmazonCodeDeployClient(credentials, clientCfg) : new AmazonCodeDeployClient(clientCfg);
@@ -115,6 +123,8 @@ public class AWSClients {
                     arn = msg.substring(arnIdx, arnSpace);
                 }
             }
+        } catch (RuntimeException e) {
+            return "";
         }
 
         String accountId = arn.split(":")[ARN_ACCOUNT_ID_INDEX];
