@@ -20,6 +20,7 @@ import com.amazonaws.services.codedeploy.model.ListDeploymentGroupsRequest;
 import com.amazonaws.services.codedeploy.model.ListDeploymentGroupsResult;
 import com.amazonaws.services.codedeploy.model.RevisionLocation;
 import com.amazonaws.services.codedeploy.model.RevisionLocationType;
+import com.amazonaws.services.codedeploy.model.FileExistsBehavior;
 import com.amazonaws.services.s3.model.PutObjectResult;
 import com.amazonaws.services.codedeploy.model.BundleType;
 import com.amazonaws.services.codedeploy.model.CreateDeploymentRequest;
@@ -30,7 +31,6 @@ import com.amazonaws.services.codedeploy.model.DeploymentStatus;
 import com.amazonaws.services.codedeploy.model.GetDeploymentRequest;
 import com.amazonaws.services.codedeploy.model.RegisterApplicationRevisionRequest;
 import com.amazonaws.services.codedeploy.model.S3Location;
-
 import hudson.AbortException;
 import hudson.FilePath;
 import hudson.Launcher;
@@ -40,8 +40,8 @@ import hudson.model.AbstractProject;
 import hudson.model.Result;
 import hudson.model.Run;
 import hudson.model.TaskListener;
-import hudson.tasks.BuildStepMonitor;
 import hudson.tasks.BuildStepDescriptor;
+import hudson.tasks.BuildStepMonitor;
 import hudson.tasks.Publisher;
 import hudson.util.DirScanner;
 import hudson.util.FormValidation;
@@ -49,25 +49,23 @@ import hudson.util.ListBoxModel;
 import hudson.util.Secret;
 import jenkins.tasks.SimpleBuildStep;
 import net.sf.json.JSONObject;
-
-import org.apache.commons.lang.StringUtils;
 import org.apache.commons.io.FileUtils;
+import org.apache.commons.lang.StringUtils;
 import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.QueryParameter;
 import org.kohsuke.stapler.StaplerRequest;
 
+import javax.annotation.Nonnull;
+import javax.servlet.ServletException;
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.FileOutputStream;
-import java.io.InputStreamReader;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.PrintStream;
+import java.io.InputStreamReader;
 import java.util.Date;
 import java.util.Map;
 import java.util.UUID;
-
-import javax.annotation.Nonnull;
-import javax.servlet.ServletException;
 
 /**
  * The AWS CodeDeploy Publisher is a post-build plugin that adds the ability to start a new CodeDeploy deployment
@@ -87,6 +85,7 @@ public class AWSCodeDeployPublisher extends Publisher implements SimpleBuildStep
     private final String  s3prefix;
     private final String  applicationName;
     private final String  deploymentGroupName; // TODO allow for deployment to multiple groups
+    private final String fileExistsBehavior;
     private final String  deploymentConfig;
     private final Long    pollingTimeoutSec;
     private final Long    pollingFreqSec;
@@ -136,7 +135,8 @@ public class AWSCodeDeployPublisher extends Publisher implements SimpleBuildStep
             String proxyHost,
             int proxyPort,
             String excludes,
-            String subdirectory) {
+            String subdirectory,
+            String fileExistsBehavior ) {
         this.externalId = externalId;
         this.applicationName = applicationName;
         this.deploymentGroupName = deploymentGroupName;
@@ -183,6 +183,14 @@ public class AWSCodeDeployPublisher extends Publisher implements SimpleBuildStep
         } else {
             this.s3prefix = s3prefix;
         }
+
+
+        if (fileExistsBehavior != null && !fileExistsBehavior.isEmpty()) {
+            FileExistsBehavior fileExistsBehavior1 = FileExistsBehavior.fromValue(fileExistsBehavior);
+            this.fileExistsBehavior = fileExistsBehavior1.name();
+        } else {
+            this.fileExistsBehavior = FileExistsBehavior.OVERWRITE.name();
+        }
     }
 
     @Override
@@ -212,11 +220,11 @@ public class AWSCodeDeployPublisher extends Publisher implements SimpleBuildStep
             }
         } else {
             aws = AWSClients.fromIAMRole(
-                this.region,
-                this.iamRoleArn,
-                this.getDescriptor().getExternalId(),
-                this.proxyHost,
-                this.proxyPort);
+                    this.region,
+                    this.iamRoleArn,
+                    this.getDescriptor().getExternalId(),
+                    this.proxyHost,
+                    this.proxyPort);
         }
 
         boolean success = false;
@@ -234,12 +242,12 @@ public class AWSCodeDeployPublisher extends Publisher implements SimpleBuildStep
 
             registerRevision(aws, revisionLocation, logger, envVars);
             if ("onlyRevision".equals(deploymentMethod)){
-              success = true;
+                success = true;
             } else {
 
-              String deploymentId = createDeployment(aws, revisionLocation, logger, envVars);
+                String deploymentId = createDeployment(aws, revisionLocation, logger, envVars);
 
-              success = waitForDeployment(aws, deploymentId, logger);
+                success = waitForDeployment(aws, deploymentId, logger);
             }
 
         } catch (Exception e) {
@@ -308,25 +316,25 @@ public class AWSCodeDeployPublisher extends Publisher implements SimpleBuildStep
         InputStreamReader reader = null;
         String version = null;
         try {
-          reader = new InputStreamReader(new FileInputStream(versionFile), "UTF-8");
-          char[] chars = new char[(int) versionFile.length() -1];
-          reader.read(chars);
-          version = new String(chars);
-          reader.close();
+            reader = new InputStreamReader(new FileInputStream(versionFile), "UTF-8");
+            char[] chars = new char[(int) versionFile.length() -1];
+            reader.read(chars);
+            version = new String(chars);
+            reader.close();
         } catch (IOException e) {
-          e.printStackTrace();
+            e.printStackTrace();
         } finally {
-          if(reader !=null){reader.close();}
+            if(reader !=null){reader.close();}
         }
 
         if (version != null){
-          zipFile = new File("/tmp/" + projectName + "-" + version + ".zip");
-          final boolean fileCreated = zipFile.createNewFile();
-          if (!fileCreated) {
-            logger.println("File already exists, overwriting: " + zipFile.getPath());
-          }
+            zipFile = new File("/tmp/" + projectName + "-" + version + ".zip");
+            final boolean fileCreated = zipFile.createNewFile();
+            if (!fileCreated) {
+                logger.println("File already exists, overwriting: " + zipFile.getPath());
+            }
         } else {
-          zipFile = File.createTempFile(projectName + "-", ".zip");
+            zipFile = File.createTempFile(projectName + "-", ".zip");
         }
 
         String key;
@@ -421,6 +429,7 @@ public class AWSCodeDeployPublisher extends Publisher implements SimpleBuildStep
                         .withDeploymentGroupName(getDeploymentGroupNameFromEnv(envVars))
                         .withApplicationName(getApplicationNameFromEnv(envVars))
                         .withRevision(revisionLocation)
+                        .withFileExistsBehavior(getFileExistsBehavior())
                         .withDescription("Deployment created by Jenkins")
         );
 
@@ -619,6 +628,14 @@ public class AWSCodeDeployPublisher extends Publisher implements SimpleBuildStep
             return items;
         }
 
+        public ListBoxModel doFillFileExistsBehaviorItems(){
+            ListBoxModel items = new ListBoxModel();
+            for(FileExistsBehavior fileExistsB: FileExistsBehavior.values()){
+                items.add(fileExistsB.toString(),fileExistsB.name());
+            }
+            return  items;
+        }
+
         public String getAwsSecretKey()
         {
             return Secret.toString(awsSecretKey);
@@ -720,6 +737,7 @@ public class AWSCodeDeployPublisher extends Publisher implements SimpleBuildStep
     public String getRegion() {
         return region;
     }
+    public String getFileExistsBehavior () { return fileExistsBehavior;}
 
     public String getProxyHost() {
         return proxyHost;

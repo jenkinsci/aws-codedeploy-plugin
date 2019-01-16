@@ -1,12 +1,12 @@
 /*
  * Copyright 2014 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- * 
+ *
  * Licensed under the Apache License, Version 2.0 (the "License").
  * You may not use this file except in compliance with the License.
  * A copy of the License is located at
- * 
+ *
  *  http://aws.amazon.com/apache2.0
- * 
+ *
  * or in the "license" file accompanying this file. This file is distributed
  * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
  * express or implied. See the License for the specific language governing
@@ -14,7 +14,26 @@
  */
 package com.amazonaws.codedeploy;
 
-import static org.apache.commons.lang.StringUtils.isEmpty;
+import com.amazonaws.AmazonServiceException;
+import com.amazonaws.ClientConfiguration;
+import com.amazonaws.auth.AWSCredentials;
+import com.amazonaws.auth.AWSStaticCredentialsProvider;
+import com.amazonaws.auth.BasicAWSCredentials;
+import com.amazonaws.auth.BasicSessionCredentials;
+import com.amazonaws.regions.Regions;
+import com.amazonaws.services.codedeploy.AmazonCodeDeploy;
+import com.amazonaws.services.codedeploy.AmazonCodeDeployClientBuilder;
+import com.amazonaws.services.codedeploy.model.GetApplicationRequest;
+import com.amazonaws.services.identitymanagement.AmazonIdentityManagement;
+import com.amazonaws.services.identitymanagement.AmazonIdentityManagementClientBuilder;
+import com.amazonaws.services.identitymanagement.model.GetUserResult;
+import com.amazonaws.services.s3.AmazonS3;
+import com.amazonaws.services.s3.AmazonS3ClientBuilder;
+import com.amazonaws.services.securitytoken.AWSSecurityTokenService;
+import com.amazonaws.services.securitytoken.AWSSecurityTokenServiceClientBuilder;
+import com.amazonaws.services.securitytoken.model.AssumeRoleRequest;
+import com.amazonaws.services.securitytoken.model.AssumeRoleResult;
+import com.amazonaws.services.securitytoken.model.Credentials;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -23,41 +42,27 @@ import java.io.OutputStreamWriter;
 import java.io.Writer;
 import java.util.UUID;
 
-import com.amazonaws.AmazonServiceException;
-import com.amazonaws.ClientConfiguration;
-import com.amazonaws.auth.AWSCredentials;
-import com.amazonaws.auth.BasicAWSCredentials;
-import com.amazonaws.auth.BasicSessionCredentials;
-import com.amazonaws.regions.Region;
-import com.amazonaws.regions.Regions;
-import com.amazonaws.services.codedeploy.AmazonCodeDeployClient;
-import com.amazonaws.services.codedeploy.model.GetApplicationRequest;
-import com.amazonaws.services.identitymanagement.AmazonIdentityManagementClient;
-import com.amazonaws.services.identitymanagement.model.GetUserResult;
-import com.amazonaws.services.s3.AmazonS3Client;
-import com.amazonaws.services.securitytoken.AWSSecurityTokenServiceClient;
-import com.amazonaws.services.securitytoken.model.AssumeRoleRequest;
-import com.amazonaws.services.securitytoken.model.AssumeRoleResult;
-import com.amazonaws.services.securitytoken.model.Credentials;
+import static org.apache.commons.lang.StringUtils.isEmpty;
 
 /**
  * @author gibbon
  */
 public class AWSClients {
+
     /**
-     * Index in the colon-separated ARN that contains the account id
-     * Sample ARN: arn:aws:iam::123456789012:user/David
-     **/
+     * Index in the colon-separated ARN that contains the account id Sample ARN:
+     * arn:aws:iam::123456789012:user/David
+     */
     private static final int ARN_ACCOUNT_ID_INDEX = 4;
-    
+
     /**
      * AWS-CodeDeploy-Jenkins-Plugin/<Version>
      * This will be used as the SDK user agent suffix
-     **/
+     */
     private static final String USER_AGENT_SUFFIX = "AWS-CodeDeploy-Jenkins-Plugin/1.20";
 
-    public final AmazonCodeDeployClient codedeploy;
-    public final AmazonS3Client s3;
+    public final AmazonCodeDeploy codedeploy;
+    public final AmazonS3 s3;
 
     private final String region;
     private final String proxyHost;
@@ -70,34 +75,54 @@ public class AWSClients {
 
         //setup proxy connection:
         ClientConfiguration clientCfg = new ClientConfiguration();
-        if (proxyHost != null && proxyPort > 0 ) {
+        if (proxyHost != null && proxyPort > 0) {
             clientCfg.setProxyHost(proxyHost);
             clientCfg.setProxyPort(proxyPort);
         }
-        
+
         clientCfg.setUserAgentSuffix(USER_AGENT_SUFFIX);
 
-        this.s3 = credentials != null ? new AmazonS3Client(credentials, clientCfg) : new AmazonS3Client(clientCfg);
-        this.codedeploy = credentials != null ? new AmazonCodeDeployClient(credentials, clientCfg) : new AmazonCodeDeployClient(clientCfg);
-        codedeploy.setRegion(Region.getRegion(Regions.fromName(this.region)));
-        s3.setRegion(Region.getRegion(Regions.fromName(this.region)));
+
+        if (credentials != null) {
+            BasicAWSCredentials creds = new BasicAWSCredentials(credentials.getAWSAccessKeyId(), credentials.getAWSSecretKey());
+            final AWSStaticCredentialsProvider awsStaticCredentialsProvider = new AWSStaticCredentialsProvider(creds);
+            this.s3 = AmazonS3ClientBuilder.standard().
+                    withCredentials(awsStaticCredentialsProvider).
+                    withClientConfiguration(clientCfg).
+                    withRegion(Regions.fromName(this.region)).build();
+
+            this.codedeploy = AmazonCodeDeployClientBuilder.standard().
+                    withCredentials(awsStaticCredentialsProvider).
+                    withClientConfiguration(clientCfg).
+                    withRegion(Regions.fromName(this.region)).build();
+
+        } else {
+            this.s3 = AmazonS3ClientBuilder.standard().
+                    withClientConfiguration(clientCfg).
+                    withRegion(Regions.fromName(this.region)).build();
+
+            this.codedeploy = AmazonCodeDeployClientBuilder.standard().
+                    withClientConfiguration(clientCfg).
+                    withRegion(Regions.fromName(this.region)).build();
+        }
     }
-    
+
     public static AWSClients fromDefaultCredentialChain(String region, String proxyHost, int proxyPort) {
         return new AWSClients(region, null, proxyHost, proxyPort);
     }
-    
+
     public static AWSClients fromIAMRole(String region, String iamRole, String externalId, String proxyHost, int proxyPort) {
         return new AWSClients(region, getCredentials(iamRole, externalId), proxyHost, proxyPort);
     }
-    
+
     public static AWSClients fromBasicCredentials(String region, String awsAccessKey, String awsSecretKey, String proxyHost, int proxyPort) {
         return new AWSClients(region, new BasicAWSCredentials(awsAccessKey, awsSecretKey), proxyHost, proxyPort);
     }
 
     /**
-     * Via the default provider chain (i.e., global keys for this Jenkins instance),  return the account ID for the
-     * currently authenticated user.
+     * Via the default provider chain (i.e., global keys for this Jenkins
+     * instance), return the account ID for the currently authenticated user.
+     *
      * @param proxyHost hostname of the proxy to use (if any)
      * @param proxyPort port of the proxy to use (if any)
      * @return 12-digit account id
@@ -107,11 +132,13 @@ public class AWSClients {
         String arn = "";
         try {
             ClientConfiguration clientCfg = new ClientConfiguration();
-            if (proxyHost != null && proxyPort > 0 ) {
+            if (proxyHost != null && proxyPort > 0) {
                 clientCfg.setProxyHost(proxyHost);
                 clientCfg.setProxyPort(proxyPort);
             }
-            AmazonIdentityManagementClient iam = new AmazonIdentityManagementClient(clientCfg);
+            AmazonIdentityManagement iam = AmazonIdentityManagementClientBuilder.standard().
+                    withClientConfiguration(clientCfg).build();
+
             GetUserResult user = iam.getUser();
             arn = user.getUser().getArn();
         } catch (AmazonServiceException e) {
@@ -150,22 +177,24 @@ public class AWSClients {
     }
 
     private static AWSCredentials getCredentials(String iamRole, String externalId) {
-        if (isEmpty(iamRole)) return null;
+        if (isEmpty(iamRole)) {
+            return null;
+        }
 
-        AWSSecurityTokenServiceClient sts = new AWSSecurityTokenServiceClient();
+        AWSSecurityTokenService sts = AWSSecurityTokenServiceClientBuilder.defaultClient();
 
         int credsDuration = (int) (AWSCodeDeployPublisher.DEFAULT_TIMEOUT_SECONDS
-                        * AWSCodeDeployPublisher.DEFAULT_POLLING_FREQUENCY_SECONDS);
+                * AWSCodeDeployPublisher.DEFAULT_POLLING_FREQUENCY_SECONDS);
 
         if (credsDuration > 3600) {
             credsDuration = 3600;
         }
 
         AssumeRoleResult assumeRoleResult = sts.assumeRole(new AssumeRoleRequest()
-                        .withRoleArn(iamRole)
-                        .withExternalId(externalId)
-                        .withDurationSeconds(credsDuration)
-                        .withRoleSessionName(AWSCodeDeployPublisher.ROLE_SESSION_NAME)
+                .withRoleArn(iamRole)
+                .withExternalId(externalId)
+                .withDurationSeconds(credsDuration)
+                .withRoleSessionName(AWSCodeDeployPublisher.ROLE_SESSION_NAME)
         );
 
         Credentials stsCredentials = assumeRoleResult.getCredentials();
