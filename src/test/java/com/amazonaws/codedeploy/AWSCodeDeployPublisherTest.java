@@ -38,7 +38,8 @@ public class AWSCodeDeployPublisherTest {
                 "",
                 0,
                 "",
-                "");
+                "",
+                 "");
 
         final AWSCodeDeployPublisher afterPublisher = j.configRoundtrip(publisher);
         j.assertEqualDataBoundBeans(publisher, afterPublisher);
