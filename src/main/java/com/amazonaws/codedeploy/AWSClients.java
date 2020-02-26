@@ -54,7 +54,7 @@ public class AWSClients {
      * AWS-CodeDeploy-Jenkins-Plugin/<Version>
      * This will be used as the SDK user agent suffix
      **/
-    private static final String USER_AGENT_SUFFIX = "AWS-CodeDeploy-Jenkins-Plugin/1.20";
+    private static final String USER_AGENT_SUFFIX = "AWS-CodeDeploy-Jenkins-Plugin/1.22";
 
     public final AmazonCodeDeployClient codedeploy;
     public final AmazonS3Client s3;
