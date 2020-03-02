@@ -19,8 +19,8 @@ public class AWSCodeDeployPublisherTest {
         final AWSCodeDeployPublisher publisher = new AWSCodeDeployPublisher(
                 "testBucket",
                 "testPrefix",
-                "",
-                "",
+                null,
+                null,
                 "testApplicationName",
                 "testDeploymentGroupName",
                 "testDeploymentConfig",
