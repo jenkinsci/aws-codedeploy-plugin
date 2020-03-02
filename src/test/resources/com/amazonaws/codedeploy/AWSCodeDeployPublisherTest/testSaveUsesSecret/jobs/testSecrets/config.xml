@@ -40,8 +40,6 @@
         <com.amazonaws.codedeploy.AWSCodeDeployPublisher plugin="codedeploy@1.20-SNAPSHOT">
             <s3bucket>test_bucket</s3bucket>
             <s3prefix></s3prefix>
-            <githubRepository></githubRepository>
-            <githubCommitId></githubCommitId>
             <applicationName>TestApplication</applicationName>
             <deploymentGroupName>TestDeploymentGorup</deploymentGroupName>
             <deploymentGroupAppspec>false</deploymentGroupAppspec>
