@@ -688,6 +688,14 @@ public class AWSCodeDeployPublisher extends Publisher implements SimpleBuildStep
         return s3prefix;
     }
 
+    public String getGithubRepository() {
+        return githubRepository;
+    }
+
+    public String getGithubCommitId() {
+        return githubCommitId;
+    }
+
     public Long getPollingTimeoutSec() {
         return pollingTimeoutSec;
     }
