@@ -241,8 +241,8 @@ public class AWSCodeDeployPublisher extends Publisher implements SimpleBuildStep
             if (!StringUtils.isEmpty(this.githubRepository) && !StringUtils.isEmpty(this.githubCommitId)) {
               final RevisionLocation revisionLocation = createFromGitHub();
             } else {
-              final FilePath sourceDirectory = getSourceDirectory(workspace);
-              final RevisionLocation revisionLocation = zipAndUpload(aws, projectName, sourceDirectory);
+              final FilePath sourceDirectory = getSourceDirectory(workspace, envVars);
+              final RevisionLocation revisionLocation = zipAndUpload(aws, projectName, sourceDirectory, envVars);
             }
 
             registerRevision(aws, revisionLocation, logger, envVars);
