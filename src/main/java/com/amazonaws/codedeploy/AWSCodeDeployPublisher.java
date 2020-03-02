@@ -238,11 +238,13 @@ public class AWSCodeDeployPublisher extends Publisher implements SimpleBuildStep
                 throw new IllegalArgumentException("No workspace present for the build.");
             }
 
+            RevisionLocation revisionLocation;
+
             if (!StringUtils.isEmpty(this.githubRepository) && !StringUtils.isEmpty(this.githubCommitId)) {
-              final RevisionLocation revisionLocation = createFromGitHub();
+              revisionLocation = createFromGitHub();
             } else {
               final FilePath sourceDirectory = getSourceDirectory(workspace, envVars);
-              final RevisionLocation revisionLocation = zipAndUpload(aws, projectName, sourceDirectory, logger, envVars);
+              revisionLocation = zipAndUpload(aws, projectName, sourceDirectory, logger, envVars);
             }
 
             registerRevision(aws, revisionLocation, logger, envVars);
