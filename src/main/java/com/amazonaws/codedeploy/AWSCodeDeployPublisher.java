@@ -30,6 +30,7 @@ import com.amazonaws.services.codedeploy.model.DeploymentStatus;
 import com.amazonaws.services.codedeploy.model.GetDeploymentRequest;
 import com.amazonaws.services.codedeploy.model.RegisterApplicationRevisionRequest;
 import com.amazonaws.services.codedeploy.model.S3Location;
+import com.amazonaws.services.codedeploy.model.GitHubLocation;
 
 import hudson.AbortException;
 import hudson.FilePath;
@@ -85,6 +86,8 @@ public class AWSCodeDeployPublisher extends Publisher implements SimpleBuildStep
 
     private final String  s3bucket;
     private final String  s3prefix;
+    private final String  githubRepository;
+    private final String  githubCommitId;
     private final String  applicationName;
     private final String  deploymentGroupName; // TODO allow for deployment to multiple groups
     private final String  deploymentConfig;
@@ -117,6 +120,8 @@ public class AWSCodeDeployPublisher extends Publisher implements SimpleBuildStep
     public AWSCodeDeployPublisher(
             String s3bucket,
             String s3prefix,
+            String githubRepository,
+            String githubCommitId,
             String applicationName,
             String deploymentGroupName,
             String deploymentConfig,
@@ -183,6 +188,9 @@ public class AWSCodeDeployPublisher extends Publisher implements SimpleBuildStep
         } else {
             this.s3prefix = s3prefix;
         }
+
+        this.githubRepository = githubRepository;
+        this.githubCommitId = githubCommitId;
     }
 
     @Override
@@ -229,8 +237,15 @@ public class AWSCodeDeployPublisher extends Publisher implements SimpleBuildStep
             if (workspace == null) {
                 throw new IllegalArgumentException("No workspace present for the build.");
             }
-            final FilePath sourceDirectory = getSourceDirectory(workspace, envVars);
-            final RevisionLocation revisionLocation = zipAndUpload(aws, projectName, sourceDirectory, logger, envVars);
+
+            RevisionLocation revisionLocation;
+
+            if (!StringUtils.isEmpty(this.githubRepository) && !StringUtils.isEmpty(this.githubCommitId)) {
+              revisionLocation = createFromGitHub();
+            } else {
+              final FilePath sourceDirectory = getSourceDirectory(workspace, envVars);
+              revisionLocation = zipAndUpload(aws, projectName, sourceDirectory, logger, envVars);
+            }
 
             registerRevision(aws, revisionLocation, logger, envVars);
             if ("onlyRevision".equals(deploymentMethod)){
@@ -396,6 +411,18 @@ public class AWSCodeDeployPublisher extends Publisher implements SimpleBuildStep
                 logger.println("Failed to clean up file " + zipFile.getPath());
             }
         }
+    }
+
+    private RevisionLocation createFromGitHub() {
+      GitHubLocation githubLocation = new GitHubLocation();
+      githubLocation.setRepository(this.githubRepository);
+      githubLocation.setCommitId(this.githubCommitId);
+
+      RevisionLocation revisionLocation = new RevisionLocation();
+      revisionLocation.setRevisionType(RevisionLocationType.GitHub);
+      revisionLocation.setGitHubLocation(githubLocation);
+
+      return revisionLocation;
     }
 
     private void registerRevision(AWSClients aws, RevisionLocation revisionLocation, PrintStream logger, Map<String, String> envVars) {
@@ -659,6 +686,14 @@ public class AWSCodeDeployPublisher extends Publisher implements SimpleBuildStep
 
     public String getS3prefix() {
         return s3prefix;
+    }
+
+    public String getGithubRepository() {
+        return githubRepository;
+    }
+
+    public String getGithubCommitId() {
+        return githubCommitId;
     }
 
     public Long getPollingTimeoutSec() {
